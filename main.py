@@ -6,10 +6,11 @@ from sklearn import model_selection
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import classification_report,confusion_matrix
 from sklearn.metrics import mean_squared_error
+from sklearn.metrics import classification_report
 from math import sqrt
 from sklearn.linear_model import LinearRegression
+import os
 
 
 def eval_cf(prediction, truth):
@@ -17,15 +18,6 @@ def eval_cf(prediction, truth):
     truth = truth[truth.nonzero()].flatten()
     return sqrt(mean_squared_error(prediction,truth))
 
-
-def eval_mlp(prediction, truth):
-    to_eval_real = []
-    to_eval_predicted = []
-    for p in prediction:
-        to_eval_predicted.append(float(p))
-    for p in truth:
-        to_eval_real.append(float(p))
-    return sqrt(mean_squared_error(to_eval_predicted, to_eval_real))
 
 def predict(ratings, similarity):
     rated_num = numpy.count_nonzero(ratings, axis=1)
@@ -41,85 +33,102 @@ def predict(ratings, similarity):
 
 
 if __name__=='__main__':
-    url_movie = "C:/Users/Nikolina/Desktop/ori/ml-latest-small/ml-latest-small/ourMovies.csv"
+
+    dir = os.path.dirname(__file__)
+    filename1 = os.path.join(dir, 'ml-latest-small', 'ourMovies.csv')
+    filename2 = os.path.join(dir, 'ml-latest-small', 'ratingMovie.csv')
+
     names_movie = ['ourId', 'movieId','year', 'rating', 'duration','director','actor1','actor2','actor3', 'gross', 'country', 'budget',
              'Mystery', 'Romance',
              'Sci-Fi','Fantasy', 'Horror', 'Film-Noir','Crime', 'Drama', 'Children', 'Animation', 'War', 'Adventure',
              'Action', 'Comedy', 'Documentary', 'Musical', 'Thriller', 'Western']
-    movies = pandas.read_csv(url_movie, names=names_movie)
+    movies = pandas.read_csv(filename1, names=names_movie)
 
-
-    url2 = "C:/Users/Nikolina/Desktop/ori/ml-latest-small/ml-latest-small/mojrating.csv"
-    names2 = ['userId','movieId', 'rating', 'timestamp']
-    ratings_loaded = pandas.read_csv(url2, names=names2)
+    names2 = ['userId', 'ourId', 'rating', 'timestamp', 'movieId', 'year', 'imdbRating', 'duration', 'director', 'actor1',
+              'actor2', 'actor3', 'gross', 'country', 'budget', 'Mystery', 'Romance', 'Sci-Fi', 'Fantasy', 'Horror',
+              'Film-Noir', 'Crime', 'Drama', 'Children', 'Animation', 'War', 'Adventure', 'Action', 'Comedy',
+              'Documentary', 'Musical', 'Thriller', 'Western']
+    ratings_loaded = pandas.read_csv(filename2, names=names2)
 
     n_users = ratings_loaded.userId.unique().shape[0]
     train_data, test_data = model_selection.train_test_split(ratings_loaded, test_size=0.20)
     movie_num = movies.shape[0]
-    train_data_matrix = numpy.zeros((n_users, movie_num))
 
+    train_data_matrix = numpy.zeros((n_users, movie_num))
     for line in train_data.itertuples():
-        train_data_matrix[line[1]-1, line[2]-1] = line[3]
+        train_data_matrix[line[1]-1, line[2]] = line[3]
 
     test_data_matrix = numpy.zeros((n_users, movie_num))
     for line in test_data.itertuples():
-        test_data_matrix[line[1]-1, line[2]-1] = line[3]
+        test_data_matrix[line[1]-1, line[2]] = line[3]
+
     user_similarity = pairwise_distances(train_data_matrix, metric='cosine')
     #predikcija za sve korisnike preko matrica
     predicted = predict(train_data_matrix, user_similarity)
 
     print 'User-based CF RMSE: ' + str(eval_cf(predicted, test_data_matrix))
 
-    #uzmemo jednog korisnika
-    new_sim = predicted[4]
-    rated_indexes = train_data_matrix[4].nonzero()[0]
-    rated_movies = []
-    ratings_movies = []
+    array = train_data.values
+    index_list = []
+    for i in range(0,33):
+        index_list.append(True)
+    index_list[2] = False
+    index_list[3] = False
+    index_list[1] = False
+    index_list[4] = False
 
-    #train_data_ind, test_data_ind = model_selection.train_test_split(rated_indexes, test_size=0.20)
-    for el in rated_indexes:
-        filtered = movies[movies['ourId'] == el]
-        for line2 in filtered.itertuples():
-            movie_data = [line2[1], line2[2],line2[3], line2[4], line2[5], line2[6], line2[7], line2[8],
-                          line2[9], line2[10], line2[11], line2[12], line2[13], line2[14], line2[15], line2[16],
-                          line2[17], line2[18], line2[19], line2[20], line2[21], line2[22], line2[23], line2[24],
-                          line2[25], line2[26], line2[27], line2[28], line2[29], line2[30]]
-            rated_movies.append(movie_data)
-            ratings_movies.append(str(train_data_matrix[4, el]))
-
+    array[numpy.isnan(array) == True] = 0
+    array[numpy.isfinite(array) == False] = 0
+    X = array[:, index_list]
+    y = array[:, [2]].flatten()
+    y2 = map(str, y)
     scaler = StandardScaler()
-    scaler.fit(rated_movies)
-    X_train = scaler.transform(rated_movies)
+    scaler.fit(X)
+    X_train = scaler.transform(X)
 
-    clf = MLPClassifier(solver='lbfgs', alpha=1e-5, hidden_layer_sizes=(30, 30), random_state=1)
-    clf.fit(X_train, ratings_movies)
+    clf = MLPClassifier(solver='adam', alpha=1e-5, hidden_layer_sizes=(30, 30), random_state=1)
+    clf.fit(X_train, y2)
+    #samo neuronska
+    test_array_n = test_data.values
+    test_array_n[numpy.isnan(test_array_n) == True] = 0
+    test_array_n[numpy.isfinite(test_array_n) == False] = 0
+    X_t_n = test_array_n[:,index_list]
+    y_t_n = test_array_n[:, [2]].flatten()
+    y_test_n = map(str, y_t_n)
+    X_test_n = scaler.transform(X_t_n)
+    predictions_n = clf.predict(X_test_n)
+    print 'MLP classifier RMSE: ' + str(sqrt(mean_squared_error(map(float,predictions_n), y_t_n)))
+    #print(classification_report(y_test_n,predictions_n))
 
+    #samo regresija
+    lr = LinearRegression()
+    lr.fit(X,array[:,[2]])
+    predictions_lr = lr.predict(X_t_n)
+    print 'Regression RMSE: ' + str(sqrt(mean_squared_error(predictions_lr,test_array_n[:,[2]])))
 
-    indexes = numpy.argpartition(new_sim, -30)[-30:]
-    test_rated_indexes = test_data_matrix[4].nonzero()[0]
-    to_continue = []
-    for x in indexes:
-        if x in test_rated_indexes:
-            to_continue.append(x)
+    for i in range(0, len(predicted)):
+        indexes = numpy.argpartition(predicted[i], -30)[-30:]
+        frame = test_data[test_data.userId == i+1]
+        for line in frame.itertuples():
+            if line[2] not in indexes:
+                ppt = test_data[(test_data.userId == i+1) & (test_data.ourId == line[2])].index.tolist()
+                try:
+                    test_data = test_data.drop(test_data.index[ppt[0]])
+                except:
+                    pass
 
-    print(to_continue)
-    movies_to_predict = []
-    real_ratings = []
-    for el in test_rated_indexes:
-        filtered = movies[movies['ourId'] == el]
-        for line2 in filtered.itertuples():
-            movie_data = [line2[1], line2[2],line2[3], line2[4], line2[5], line2[6], line2[7], line2[8],
-                          line2[9], line2[10], line2[11], line2[12], line2[13], line2[14], line2[15], line2[16],
-                          line2[17], line2[18], line2[19], line2[20], line2[21], line2[22], line2[23], line2[24],
-                          line2[25], line2[26], line2[27], line2[28], line2[29], line2[30]]
-            movies_to_predict.append(movie_data)
-            real_ratings.append(str(test_data_matrix[4, el]))
-    scaler.fit(movies_to_predict)
-    X_test = scaler.transform(movies_to_predict)
+    test_array_comb = test_data.values
+    test_array_comb[numpy.isnan(test_array_comb) == True] = 0
+    test_array_comb[numpy.isfinite(test_array_comb) == False] = 0
+    X_t_comb = test_array_comb[:, index_list]
+    y_t_comb = test_array_comb[:, [2]].flatten()
+    y_test_comb = map(str, y_t_comb)
+    scaler.fit(X_t_comb)
+    X_test_comb = scaler.transform(X_t_comb)
 
-    predictions = clf.predict(X_test)
-    print(real_ratings)
-    print(predictions)
-    print(confusion_matrix(real_ratings,predictions))
-    print(classification_report(real_ratings,predictions))
-    print 'MLP classifier RMSE: ' + str(eval_mlp(predictions, real_ratings))
+    predictions_n_comb = clf.predict(X_test_comb)
+    print 'CF + MLP classifier RMSE: ' + str(sqrt(mean_squared_error(map(float,predictions_n_comb), y_t_comb)))
+    #print(classification_report(y_test_comb,predictions_n_comb))
+
+    predictions_lr_comb = lr.predict(X_t_comb)
+    print 'CF + Regression RMSE: ' + str(sqrt(mean_squared_error(predictions_lr_comb,test_array_comb[:,[2]])))
